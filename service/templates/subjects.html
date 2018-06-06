@@ -1,0 +1,28 @@
+{{define "subjects"}}
+<!DOCTYPE html>
+<html lang="en">
+{{template "header" .}}
+<body>
+{{template "nav_bar" .}}
+
+<div class="container">
+    <table class="table table-hover table-responsive">
+        <thead>
+        <tr>
+            <th scope="col">Subject</th>
+        </tr>
+        </thead>
+        <tbody>
+        {{range .Subjects}}
+        <tr>
+            <td>{{.Name}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+</div>
+
+{{template "footer" .}}
+</body>
+</html>
+{{end}}

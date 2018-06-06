@@ -13,11 +13,8 @@ import (
 
 type TemplateInput struct {
 	Authentication Authentication
-	Users          Users
-}
-
-type Users struct {
 	Users []models.Employee
+	Subjects []models.Subject
 }
 
 type ErrorResponse struct {
@@ -47,6 +44,7 @@ func (server *Server) Serve() {
 	r.HandleFunc("/login", server.loginHandle).Methods(http.MethodPost)
 	r.HandleFunc("/logout", server.logoutHandle).Methods(http.MethodPost)
 	r.HandleFunc("/users", server.usersHandle).Methods(http.MethodGet)
+	r.HandleFunc("/subjects", server.subjectsHandle).Methods(http.MethodGet)
 
 	tmplLoc := "service/templates/"
 
@@ -70,6 +68,35 @@ func (server *Server) indexHandle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (server *Server) subjectsHandle(w http.ResponseWriter, r *http.Request) {
+	ok, err := server.verifyAccess(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	tmplInput, err := server.generateTemplateInput(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	tmplInput.Subjects, err = models.GetAllSubjects(server.DB)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	err = server.renderTemplate(w, "subjects", tmplInput)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 func (server *Server) usersHandle(w http.ResponseWriter, r *http.Request) {
 
 	ok, err := server.verifyAccess(r)
@@ -87,7 +114,7 @@ func (server *Server) usersHandle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	tmplInput.Users.Users, err = models.GetAllEmployees(server.DB)
+	tmplInput.Users, err = models.GetAllEmployees(server.DB)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
