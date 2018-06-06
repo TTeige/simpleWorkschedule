@@ -12,6 +12,23 @@ import (
 	"github.com/gorilla/sessions"
 )
 
+type TemplateInput struct {
+	Authentication Authentication
+}
+
+type ErrorResponse struct {
+	Error string
+	Path  string
+}
+
+type Authentication struct {
+	LoggedIn bool
+}
+
+const (
+	AppName = "workscheduler"
+)
+
 type Server struct {
 	templates   *template.Template
 	DB          *sql.DB
@@ -21,19 +38,25 @@ type Server struct {
 func (server *Server) Serve() {
 	r := mux.NewRouter()
 	r.HandleFunc("/", server.indexHandle).Methods("GET")
-	r.HandleFunc("/signup", server.signUpHandle).Methods("POST")
+	r.HandleFunc("/signup", server.signUpHandle).Methods("POST", "GET")
 	r.HandleFunc("/login", server.loginHandle).Methods("POST")
 
 	tmplLoc := "service/templates/"
 
 	server.templates = template.Must(template.ParseFiles(tmplLoc+"footer.html", tmplLoc+"header.html",
-		tmplLoc+"index.html", tmplLoc+"navbar.html", tmplLoc+"login.html"))
+		tmplLoc+"index.html", tmplLoc+"navbar.html", tmplLoc+"login.html", tmplLoc+"signup.html"))
 	log.Print("Listening on localhost:8080")
 	http.ListenAndServeTLS("localhost:8080", os.Getenv("SERVER_CERT"), os.Getenv("SERVER_KEY"), r)
 }
 
 func (server *Server) indexHandle(w http.ResponseWriter, r *http.Request) {
-	err := server.renderTemplate(w, "index", []string{})
+
+	tmplInput, err := server.generateTemplateInput(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	err = server.renderTemplate(w, "index", tmplInput)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -48,53 +71,17 @@ func (server *Server) renderTemplate(w http.ResponseWriter, tmpl string, p inter
 }
 
 func (server *Server) signUpHandle(w http.ResponseWriter, r *http.Request) {
-
-	var employee models.Employee
-
-	err := r.ParseForm()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-	}
-	if email, ok := r.PostForm["email"]; ok {
-		employee.Email = email[0]
-	} else {
-		w.WriteHeader(http.StatusBadRequest)
-	}
-
-	if firstName, ok := r.PostForm["first_name"]; ok {
-		employee.FirstName = firstName[0]
-	} else {
-		w.WriteHeader(http.StatusBadRequest)
-	}
-	if lastName, ok := r.PostForm["last_name"]; ok {
-		employee.LastName = lastName[0]
-	} else {
-		w.WriteHeader(http.StatusBadRequest)
-	}
-
-	if affiliation, ok := r.PostForm["affiliation"]; ok {
-		employee.Affiliation = affiliation[0]
-	} else {
-		w.WriteHeader(http.StatusBadRequest)
-	}
-
-	if username, ok := r.PostForm["username"]; ok {
-		employee.Username = username[0]
-	}
-
-	if pw, ok := r.PostForm["password"]; ok {
-		hash, err := HashPassword(pw[0])
+	if r.Method == http.MethodGet {
+		tmplInput, err := server.generateTemplateInput(r)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
-		employee.PasswordHash = hash
-	} else {
-		w.WriteHeader(http.StatusBadRequest)
-	}
-
-	err = models.InsertEmployee(server.DB, employee)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		err = server.renderTemplate(w, "signup", tmplInput)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	} else if r.Method == http.MethodPost {
+		server.signUp(w, r)
 	}
 }
 
@@ -118,13 +105,15 @@ func (server *Server) loginHandle(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if matches {
-				session, err := server.CookieStore.Get(r, employee.Email)
+				session, err := server.CookieStore.Get(r, AppName)
 				if err != nil {
 					http.Error(w, err.Error(), http.StatusInternalServerError)
 					return
 				}
 
 				session.Values["authenticated"] = true
+				session.Values["first_name"] = employee.FirstName
+				session.Values["last_name"] = employee.LastName
 				log.Print(session)
 				session.Save(r, w)
 			}
@@ -152,4 +141,81 @@ func CheckPasswordHash(password, hash string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func (server *Server) signUp(w http.ResponseWriter, r *http.Request) {
+	var employee models.Employee
+
+	err := r.ParseForm()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if email, ok := r.PostForm["email"]; ok {
+		employee.Email = email[0]
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if firstName, ok := r.PostForm["first_name"]; ok {
+		employee.FirstName = firstName[0]
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if lastName, ok := r.PostForm["last_name"]; ok {
+		employee.LastName = lastName[0]
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if affiliation, ok := r.PostForm["affiliation"]; ok {
+		employee.Affiliation = affiliation[0]
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if username, ok := r.PostForm["username"]; ok {
+		employee.Username = username[0]
+	}
+
+	if pw, ok := r.PostForm["password"]; ok {
+		hash, err := HashPassword(pw[0])
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		employee.PasswordHash = hash
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	err = models.InsertEmployee(server.DB, employee)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+func (server *Server)generateTemplateInput(r *http.Request) (TemplateInput, error) {
+	tmplInput := TemplateInput{
+		Authentication: Authentication{
+			LoggedIn: true,
+		},
+	}
+	session, err := server.CookieStore.Get(r, AppName)
+	if err != nil {
+		return TemplateInput{}, err
+	}
+	// Check if user is authenticated
+	if auth, ok := session.Values["authenticated"].(bool); !ok || !auth {
+		tmplInput.Authentication.LoggedIn = false
+	}
+	return tmplInput, nil
 }
