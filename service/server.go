@@ -8,12 +8,16 @@ import (
 	"database/sql"
 	"os"
 	"github.com/tteige/simpleWorkschedule/models"
-	"golang.org/x/crypto/bcrypt"
 	"github.com/gorilla/sessions"
 )
 
 type TemplateInput struct {
 	Authentication Authentication
+	Users          Users
+}
+
+type Users struct {
+	Users []models.Employee
 }
 
 type ErrorResponse struct {
@@ -23,6 +27,7 @@ type ErrorResponse struct {
 
 type Authentication struct {
 	LoggedIn bool
+	Admin    bool
 }
 
 const (
@@ -37,14 +42,16 @@ type Server struct {
 
 func (server *Server) Serve() {
 	r := mux.NewRouter()
-	r.HandleFunc("/", server.indexHandle).Methods("GET")
-	r.HandleFunc("/signup", server.signUpHandle).Methods("POST", "GET")
-	r.HandleFunc("/login", server.loginHandle).Methods("POST")
+	r.HandleFunc("/", server.indexHandle).Methods(http.MethodGet)
+	r.HandleFunc("/signup", server.signUpHandle).Methods(http.MethodPost, http.MethodGet)
+	r.HandleFunc("/login", server.loginHandle).Methods(http.MethodPost)
+	r.HandleFunc("/logout", server.logoutHandle).Methods(http.MethodPost)
+	r.HandleFunc("/users", server.usersHandle).Methods(http.MethodGet)
 
 	tmplLoc := "service/templates/"
 
 	server.templates = template.Must(template.ParseFiles(tmplLoc+"footer.html", tmplLoc+"header.html",
-		tmplLoc+"index.html", tmplLoc+"navbar.html", tmplLoc+"login.html", tmplLoc+"signup.html"))
+		tmplLoc+"index.html", tmplLoc+"navbar.html", tmplLoc+"login.html", tmplLoc+"signup.html", tmplLoc+"users.html"))
 	log.Print("Listening on localhost:8080")
 	http.ListenAndServeTLS("localhost:8080", os.Getenv("SERVER_CERT"), os.Getenv("SERVER_KEY"), r)
 }
@@ -54,20 +61,41 @@ func (server *Server) indexHandle(w http.ResponseWriter, r *http.Request) {
 	tmplInput, err := server.generateTemplateInput(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-
 	err = server.renderTemplate(w, "index", tmplInput)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 }
 
-func (server *Server) renderTemplate(w http.ResponseWriter, tmpl string, p interface{}) error {
-	err := server.templates.ExecuteTemplate(w, tmpl, p)
+func (server *Server) usersHandle(w http.ResponseWriter, r *http.Request) {
+
+	ok, err := server.verifyAccess(r)
 	if err != nil {
-		return err
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	return nil
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	tmplInput, err := server.generateTemplateInput(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	tmplInput.Users.Users, err = models.GetAllEmployees(server.DB)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	err = server.renderTemplate(w, "users", tmplInput)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (server *Server) signUpHandle(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +142,7 @@ func (server *Server) loginHandle(w http.ResponseWriter, r *http.Request) {
 				session.Values["authenticated"] = true
 				session.Values["first_name"] = employee.FirstName
 				session.Values["last_name"] = employee.LastName
+				session.Values["admin"] = employee.Admin
 				log.Print(session)
 				session.Save(r, w)
 			}
@@ -130,17 +159,18 @@ func (server *Server) loginHandle(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func HashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
-	return string(bytes), err
-}
-
-func CheckPasswordHash(password, hash string) (bool, error) {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+func (server *Server) logoutHandle(w http.ResponseWriter, r *http.Request) {
+	session, err := server.CookieStore.Get(r, AppName)
 	if err != nil {
-		return false, err
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	return true, nil
+
+	if auth, ok := session.Values["authenticated"].(bool); ok || auth {
+		session.Values["authenticated"] = false
+	}
+	session.Save(r, w)
+	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 func (server *Server) signUp(w http.ResponseWriter, r *http.Request) {
@@ -203,10 +233,11 @@ func (server *Server) signUp(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func (server *Server)generateTemplateInput(r *http.Request) (TemplateInput, error) {
+func (server *Server) generateTemplateInput(r *http.Request) (TemplateInput, error) {
 	tmplInput := TemplateInput{
 		Authentication: Authentication{
-			LoggedIn: true,
+			LoggedIn: false,
+			Admin:    false,
 		},
 	}
 	session, err := server.CookieStore.Get(r, AppName)
@@ -214,8 +245,37 @@ func (server *Server)generateTemplateInput(r *http.Request) (TemplateInput, erro
 		return TemplateInput{}, err
 	}
 	// Check if user is authenticated
-	if auth, ok := session.Values["authenticated"].(bool); !ok || !auth {
-		tmplInput.Authentication.LoggedIn = false
+	if auth, ok := session.Values["authenticated"].(bool); ok && auth {
+		tmplInput.Authentication.LoggedIn = true
 	}
+
+	if admin, ok := session.Values["admin"].(bool); ok && admin {
+		tmplInput.Authentication.Admin = true
+	}
+
+	log.Printf("Template input: %+v", tmplInput)
+
 	return tmplInput, nil
+}
+
+func (server *Server) renderTemplate(w http.ResponseWriter, tmpl string, p interface{}) error {
+	err := server.templates.ExecuteTemplate(w, tmpl, p)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (server *Server) verifyAccess(r *http.Request) (bool, error) {
+	session, err := server.CookieStore.Get(r, AppName)
+	if err != nil {
+		return false, err
+	}
+	// Check if user is authenticated
+	if auth, ok := session.Values["authenticated"].(bool); ok && auth {
+		if auth, ok := session.Values["admin"].(bool); ok && auth {
+			return true, nil
+		}
+	}
+	return false, nil
 }
