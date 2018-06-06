@@ -9,17 +9,21 @@
     <div class="collapse navbar-collapse" id="navbarSupportedContent">
         <ul class="navbar-nav mr-auto">
             <li class="nav-item active">
-                <a class="nav-link" href="#">Hjem<span class="sr-only">(current)</span></a>
+                <a class="nav-link" href="/">Hjem<span class="sr-only">(current)</span></a>
             </li>
+        {{if eq .Authentication.LoggedIn false}}
             <li class="nav-item">
-                <a class="nav-link" href="#">Registrer bruker</a>
+                <a class="nav-link" href="/signup">Registrer bruker</a>
             </li>
+        {{end}}
         </ul>
+    {{if eq .Authentication.LoggedIn false}}
         <ul class="navbar-nav">
             <li>
             {{template "login" .}}
             </li>
         </ul>
+    {{end}}
     </div>
 
 </nav>
