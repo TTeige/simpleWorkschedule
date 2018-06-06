@@ -20,9 +20,9 @@ func InsertEmployee(db *sql.DB, employee Employee) (error) {
 	return nil
 }
 
-func GetEmployee(db *sql.DB, username string) (Employee, error) {
+func GetEmployee(db *sql.DB, email string) (Employee, error) {
 	var employee Employee
-	err := db.QueryRow("SELECT (first_name, last_name, e_mail, password_hash, affiliation, username) FROM employee WHERE e_mail = $1", username).Scan(&employee.FirstName, &employee.LastName, &employee.Email, &employee.PasswordHash, &employee.Affiliation, &employee.Username)
+	err := db.QueryRow("SELECT first_name, last_name, e_mail, password_hash, affiliation, username FROM employee WHERE e_mail = $1", email).Scan(&employee.FirstName, &employee.LastName, &employee.Email, &employee.PasswordHash, &employee.Affiliation, &employee.Username)
 	if err != nil {
 		return employee, err
 	}
