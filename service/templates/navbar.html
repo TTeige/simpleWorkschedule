@@ -1,6 +1,6 @@
 {{define "nav_bar"}}
 <nav class="navbar navbar-expand-lg navbar-light">
-    <a class="navbar-brand" href="#">Arbeidsoversikt for Røde Kors Tromsø</a>
+    <a class="navbar-brand" href="#">Workschedule</a>
     <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent"
             aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
@@ -9,11 +9,16 @@
     <div class="collapse navbar-collapse" id="navbarSupportedContent">
         <ul class="navbar-nav mr-auto">
             <li class="nav-item active">
-                <a class="nav-link" href="/">Hjem<span class="sr-only">(current)</span></a>
+                <a class="nav-link" href="/">Home<span class="sr-only">(current)</span></a>
             </li>
         {{if eq .Authentication.LoggedIn false}}
             <li class="nav-item">
-                <a class="nav-link" href="/signup">Registrer bruker</a>
+                <a class="nav-link" href="/signup">Register User</a>
+            </li>
+        {{end}}
+        {{if and .Authentication.Admin .Authentication.LoggedIn}}
+            <li class="nav-item">
+                <a class="nav-link" href="/users">User overview</a>
             </li>
         {{end}}
         </ul>
@@ -21,6 +26,14 @@
         <ul class="navbar-nav">
             <li>
             {{template "login" .}}
+            </li>
+        </ul>
+    {{else}}
+        <ul class="navbar-nav">
+            <li>
+                <form method="post" action="/logout">
+                    <button type="submit" class="btn btn-primary">Logout</button>
+                </form>
             </li>
         </ul>
     {{end}}
