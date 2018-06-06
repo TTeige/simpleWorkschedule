@@ -1,0 +1,38 @@
+{{define "users"}}
+<!DOCTYPE html>
+<html lang="en">
+{{template "header" .}}
+<body>
+{{template "nav_bar" .}}
+
+<div class="container">
+    <table class="table table-hover table-responsive">
+        <thead>
+        <tr>
+            <th scope="col">First name</th>
+            <th scope="col">Last name</th>
+            <th scope="col">Email</th>
+            <th scope="col">Affiliation</th>
+            <th scope="col">Admin</th>
+        </tr>
+        </thead>
+        <tbody>
+        {{range .Users}}
+        <tr>
+            <td>{{.FirstName}}</td>
+            <td>{{.LastName}}</td>
+            <td>{{.Email}}</td>
+            <td>{{.Affiliation}}</td>
+        {{if .Admin}}
+            <td><p class="fas fa-check"></p></td>
+        {{end}}
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+</div>
+
+{{template "footer" .}}
+</body>
+</html>
+{{end}}
